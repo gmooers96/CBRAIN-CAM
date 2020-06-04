@@ -1,0 +1,44 @@
+{
+    "id": 19,
+    "optimizer": {
+        "lr": 1e-5
+    },
+    "loss": {
+        "kl_weight":0.1
+    },
+    "data": {
+        "training_data_path": "/fast/gmooers/Preprocessed_Data/W_Trial/Space_Time_W_Training.npy",
+        "test_data_path": "/fast/gmooers/Preprocessed_Data/W_Trial/Space_Time_W_Test.npy"
+    },
+    "encoder": {
+        "activation": "relu",
+        "latent_dim": 2,
+        "dense_1": {
+            "dim": 150
+        },
+        "dense_2": {
+            "dim": 100
+        }
+    },
+    "decoder": {
+        "latent_dim": 2,
+        "activation": "relu",
+          "dense_1": {
+            "dim": 100
+        },
+        "dense_2": {
+            "dim": 150
+        },
+        "dense_mu": {
+            "dim": 3840,
+            "activation": "sigmoid"
+        },
+        "dense_log_var": {
+            "dim": 3840,
+            "activation": "linear"
+        }
+    },
+    "batch_size": 128,
+    "train_epochs": 100
+    
+}
