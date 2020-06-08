@@ -110,50 +110,50 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     samples = 3
     ##################################################################################
     #begin generation code
-    for i in range(samples):
-        z_new = np.random.normal(size=(1,2))
-        new_image = decoder.predict(z_new)
-        new_image=np.squeeze(new_image)
-        sample_mean = new_image[:128*30]
-        sample_log_var = new_image[128*30:]
-        recon_sample = np.random.multivariate_normal(sample_mean, np.exp(sample_log_var) * np.identity(128*30))
-        print("made it past recon sample")
-        new_image = recon_sample.reshape((30,128))
-        recon_samples.append(new_image)
+#     for i in range(samples):
+#         z_new = np.random.normal(size=(1,2))
+#         new_image = decoder.predict(z_new)
+#         new_image=np.squeeze(new_image)
+#         sample_mean = new_image[:128*30]
+#         sample_log_var = new_image[128*30:]
+#         recon_sample = np.random.multivariate_normal(sample_mean, np.exp(sample_log_var) * np.identity(128*30))
+#         print("made it past recon sample")
+#         new_image = recon_sample.reshape((30,128))
+#         recon_samples.append(new_image)
         
-    Max_Scalar = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_Max_Scalar.npy')
-    Min_Scalar = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_Min_Scalar.npy')
-    Unscaled_Predict_Images = np.interp(recon_samples, (0, 1), (Min_Scalar, Max_Scalar))
-    fig, axs = plt.subplots(samples)
-    max_val = np.max(Unscaled_Predict_Images)
-    min_val = np.min(Unscaled_Predict_Images)
+#     Max_Scalar = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_Max_Scalar.npy')
+#     Min_Scalar = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_Min_Scalar.npy')
+#     Unscaled_Predict_Images = np.interp(recon_samples, (0, 1), (Min_Scalar, Max_Scalar))
+#     fig, axs = plt.subplots(samples)
+#     max_val = np.max(Unscaled_Predict_Images)
+#     min_val = np.min(Unscaled_Predict_Images)
     
-    for i in range(samples): 
-        cb = axs[i].imshow(Unscaled_Predict_Images[i], vmax = max_val, vmin = min_val, cmap='RdBu_r')
-        axs[i].invert_yaxis()
-        y_ticks = np.arange(1400, 0, -400)
-        axs[i].set_yticklabels(y_ticks)
-        if i == 0:
-            axs[i].set_title("Generations")
-            cbaxes = fig.add_axes([0.908, 0.1, 0.03, 0.8])
-            fig.colorbar(cb, cax = cbaxes, label = "Vertical Velocity")
+#     for i in range(samples): 
+#         cb = axs[i].imshow(Unscaled_Predict_Images[i], vmax = max_val, vmin = min_val, cmap='RdBu_r')
+#         axs[i].invert_yaxis()
+#         y_ticks = np.arange(1400, 0, -400)
+#         axs[i].set_yticklabels(y_ticks)
+#         if i == 0:
+#             axs[i].set_title("Generations")
+#             cbaxes = fig.add_axes([0.908, 0.1, 0.03, 0.8])
+#             fig.colorbar(cb, cax = cbaxes, label = "Vertical Velocity")
     
-        if i < samples-1:
-            axs[i].set_xticks([])
-        if i == samples-1:
-            label = axs[i].set_xlabel('CRMs', fontsize = 12)
-            axs[i].xaxis.set_label_coords(-0.05, -4.825)
+#         if i < samples-1:
+#             axs[i].set_xticks([])
+#         if i == samples-1:
+#             label = axs[i].set_xlabel('CRMs', fontsize = 12)
+#             axs[i].xaxis.set_label_coords(-0.05, -4.825)
            
-        label = axs[i].set_ylabel('Pressure (mbs)', fontsize = 12)
-        axs[i].yaxis.set_label_coords(-1.22, -1.525)
+#         label = axs[i].set_ylabel('Pressure (mbs)', fontsize = 12)
+#         axs[i].yaxis.set_label_coords(-1.22, -1.525)
               
  
     
     
-    plt.subplots_adjust(wspace=0.05, hspace=0)
-    plt.suptitle("VAE Samples")
-    plt.savefig('./model_graphs/generated_samples_{}.png'.format(id))
-    plt.close()
+#     plt.subplots_adjust(wspace=0.05, hspace=0)
+#     plt.suptitle("VAE Samples")
+#     plt.savefig('./model_graphs/generated_samples_{}.png'.format(id))
+#     plt.close()
     #end generation code
     ##################################################################################
     original_samples = []
@@ -180,12 +180,16 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
         hds.append(h)
         mse = mse_metric(np.array(sample[:, :, 0]), np.array(recon_sample))
         mses.append(mse)
-        rep_target, rep_pred, targ_freqs = spectrum_generator(sample[:, :, 0], recon_sample, 30, 1/128)
+        #rep_target, rep_pred, targ_freqs = spectrum_generator(sample[:, :, 0], recon_sample, 30, 1/128)
+        rep_target, rep_pred, targ_freqs = spectrum_generator(sample[:, :, 0], recon_sample, 30, 1)
         spectrum_pred.append(rep_pred)
         spectrum_truth.append(rep_target)
-        ax[i].plot(targ_freqs, rep_target, label = "Original")
-        ax[i].plot(targ_freqs, rep_pred, label = "Reconstruction")
+        #ax[i].plot(targ_freqs, rep_target, label = "Original")
+        #ax[i].plot(targ_freqs, rep_pred, label = "Reconstruction")
+        ax[i].plot(1/targ_freqs, rep_target, label = "Original")
+        ax[i].plot(1/targ_freqs, rep_pred, label = "Reconstruction")
         ax[i].set_yscale('log')
+        ax[i].set_xscale('log')
         if i == 0:
             ax[i].legend()
         if i < samples-1:
@@ -200,11 +204,15 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     
     overall_truth = np.nanmean(np.array(spectrum_truth),axis = 0)
     overall_pred = np.nanmean(np.array(spectrum_pred),axis = 0)
-    plt.plot(targ_freqs, overall_truth, label="Original")
-    plt.plot(targ_freqs, overall_pred, label="Reconstruction")
+    #plt.plot(targ_freqs, overall_truth, label="Original")
+    #plt.plot(targ_freqs, overall_pred, label="Reconstruction")
+    plt.plot(1/targ_freqs, overall_truth, label="Original")
+    plt.plot(1/targ_freqs, overall_pred, label="Reconstruction")
     plt.legend()
     plt.xlabel("CRM Spacing")
     plt.ylabel(r'$\frac{m^2*crm}{s^2}$')
+    plt.yscale('log')
+    plt.xscale('log')
     plt.title("Overall signal")
     plt.savefig('./model_graphs/overall_fft_{}.png'.format(id))
     plt.close()
