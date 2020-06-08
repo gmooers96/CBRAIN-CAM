@@ -158,6 +158,8 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     ##################################################################################
     original_samples = []
     recon_samples = []
+    spectrum_pred = []
+    spectrum_truth = []
     samples = 2
     fig, ax = plt.subplots(samples,1)
     for i in range(samples):
@@ -179,6 +181,8 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
         mse = mse_metric(np.array(sample[:, :, 0]), np.array(recon_sample))
         mses.append(mse)
         rep_target, rep_pred, targ_freqs = spectrum_generator(sample[:, :, 0], recon_sample, 30, 1/128)
+        spectrum_pred.append(rep_pred)
+        spectrum_truth.append(rep_target)
         ax[i].plot(targ_freqs, rep_target, label = "Original")
         ax[i].plot(targ_freqs, rep_pred, label = "Reconstruction")
         ax[i].set_yscale('log')
@@ -191,8 +195,20 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
         ax[i].set_ylabel(r'$\frac{m^2*crm}{s^2}$')
     
     plt.suptitle("Spatial Spectral Analysis")
-    plt.savefig('./model_graphs/fft_{}.png')
+    plt.savefig('./model_graphs/fft_{}.png'.format(id))
     plt.close()
+    
+    overall_truth = np.nanmean(np.array(spectrum_truth),axis = 0)
+    overall_pred = np.nanmean(np.array(spectrum_pred),axis = 0)
+    plt.plot(targ_freqs, overall_truth, label="Original")
+    plt.plot(targ_freqs, overall_pred, label="Reconstruction")
+    plt.legend()
+    plt.xlabel("CRM Spacing")
+    plt.ylabel(r'$\frac{m^2*crm}{s^2}$')
+    plt.title("Overall signal")
+    plt.savefig('./model_graphs/overall_fft_{}.png'.format(id))
+    plt.close()
+    
     #Formula from Gagne et. al 2020
     hd = Hellinger_Dist(np.array(original_samples), np.array(recon_samples))
     
