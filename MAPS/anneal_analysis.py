@@ -10,6 +10,55 @@ from keras import backend as K
 
 #from train_vae import encoder_gen, decoder_gen
 from kl_anneal_vae_train import encoder_gen, decoder_gen
+        
+def spectrum_gen(h, dx):
+    nx = len(h)
+    #Get half the length of the series to avoid redudant information
+    npositive = nx//2
+    pslice = slice(1, npositive)
+    #Get frequencies
+    freqs = np.fft.fftfreq(nx, d=dx)[pslice] 
+    #perform the fft 
+    ft = np.fft.fft(h)[pslice]
+    #remove imaginary componant of the fft and square
+    psraw = np.conjugate(ft) *ft
+    #double to account for the negative half that was removed above
+    psraw *= 2.0
+    #Normalization for the power spectrum
+    psraw /= nx**2
+    #Go from the Power Spectrum to Power Density
+    psdraw = psraw * dx * nx
+    return freqs, psraw, psdraw
+
+
+def spectrum_generator(targets, features, levels, time_space):
+    targ_freqs, targ_psraw, targ_psdraw = spectrum_gen(np.squeeze(targets[1,:]), time_space)
+    depth = len(targ_psdraw)
+    target_collector = np.zeros(shape=(levels, depth))
+    target_collector[:,:] = np.nan
+    feature_collector = np.zeros(shape=(levels, depth))
+    feature_collector[:,:] = np.nan
+    counter = 0
+    for i in range(levels):
+            target = np.squeeze(targets[i, :])
+            feature = np.squeeze(features[i, :])
+            targ_freqs, targ_psraw, targ_psdraw = spectrum_gen(target, time_space)
+            feat_freqs, feat_psraw, feat_psdraw = spectrum_gen(feature, time_space)
+            target_collector[i, :] = targ_psdraw
+            feature_collector[i, :] = feat_psdraw
+    rep_target = np.nanmean(target_collector, axis = 0)
+    rep_pred = np.nanmean(feature_collector, axis = 0)
+    #plotter(rep_target, rep_pred, targ_freqs, "Image average Signal")
+    #return targ_freqs, feat_freqs, target_collector, feature_collector
+    return rep_target, rep_pred, targ_freqs
+
+def mse_metric(p, q):
+    mse = np.square(np.subtract(p,q)).mean()
+    return mse
+
+def Hellinger_Dist(p, q):
+    hd = np.sqrt(np.sum((np.sqrt(p.ravel()) - np.sqrt(q.ravel())) ** 2)) / np.sqrt(2)
+    return hd
 
 def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id): 
     """
@@ -29,7 +78,7 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     
     plt.figure(figsize=(6,8))
     plt.scatter(x_test_encoded[:, 0], x_test_encoded[:,1])
-    y_test = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Y_Convection_Test.npy)
+    y_test = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Y_Convection_Test.npy')
     plt.scatter(x_test_encoded[2, :,0], x_test_encoded[2, :,1], c = y_test)
     plt.colorbar()
     plt.title("Latent Space Representation")
@@ -56,6 +105,8 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     
     original_samples = []
     recon_samples = []
+    hds = []
+    mses = []
     samples = 3
     ##################################################################################
     #begin generation code
@@ -107,7 +158,8 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     ##################################################################################
     original_samples = []
     recon_samples = []
-    samples = 3
+    samples = 2
+    fig, ax = plt.subplots(samples,1)
     for i in range(samples):
         rand_sample = np.random.randint(0, len(test_data))
 
@@ -122,6 +174,27 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
 
         original_samples.append(sample[:, :, 0])
         recon_samples.append(recon_sample)
+        h = Hellinger_Dist(np.array(sample[:, :, 0]), np.array(recon_sample))
+        hds.append(h)
+        mse = mse_metric(np.array(sample[:, :, 0]), np.array(recon_sample))
+        mses.append(mse)
+        rep_target, rep_pred, targ_freqs = spectrum_generator(sample[:, :, 0], recon_sample, 30, 1/128)
+        ax[i].plot(targ_freqs, rep_target, label = "Original")
+        ax[i].plot(targ_freqs, rep_pred, label = "Reconstruction")
+        ax[i].set_yscale('log')
+        if i == 0:
+            ax[i].legend()
+        if i < samples-1:
+            ax[i].set_xticks([])
+        if i == samples-1:
+            ax[i].set_xlabel("CRM Spacing")
+        ax[i].set_ylabel(r'$\frac{m^2*crm}{s^2}$')
+    
+    plt.suptitle("Spatial Spectral Analysis")
+    plt.savefig('./model_graphs/fft_{}.png')
+    plt.close()
+    #Formula from Gagne et. al 2020
+    hd = Hellinger_Dist(np.array(original_samples), np.array(recon_samples))
     
     Max_Scalar = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_Max_Scalar.npy')
     Min_Scalar = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_Min_Scalar.npy')
@@ -163,7 +236,8 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
             if count_c == 0:
                 axs[int(i/2), 1].set_title("Reconstructions")
                 count_c = 1
-    
+            axs[int(i/2), 1].text(100, 25, "MSE: "+str(mses[int(i/2)])[:3]+str(mses[int(i/2)])[-4:], fontsize = 5)
+            axs[int(i/2), 1].text(108, 20, "HD: "+str(hds[int(i/2)])[:4], fontsize = 5)
         if i < samples*2-3:
             axs[int(i/2), 1].set_xticks([])
             axs[int(i/2), 0].set_xticks([])
@@ -213,7 +287,7 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
 
     plt.xlabel('Vertical Velocity', fontsize = 15)
     plt.ylabel('Frequency', fontsize = 15)
-    plt.title('W Histogram', fontsize = 15)
+    plt.title('Histogram.  Hellinger Distance: '+str(hd)[:4], fontsize = 15)
     plt.legend(loc = 'best')
     plt.savefig('./model_graphs/reconstructed_distribution_{}.png'.format(id))
     plt.close()
