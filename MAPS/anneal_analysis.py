@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import keras
 from keras import layers
 from keras import backend as K
-
+from scipy.stats import norm
 #from train_vae import encoder_gen, decoder_gen
 from kl_anneal_vae_train import encoder_gen, decoder_gen
         
@@ -56,7 +56,24 @@ def mse_metric(p, q):
     mse = np.square(np.subtract(p,q)).mean()
     return mse
 
+def pdf_gen(dist):
+    mu, std = norm.fit(dist)
+    #print("this is the dist", dist.shape)
+    if dist.ndim > 2:
+        dist = np.reshape(dist, (len(dist)*len(dist[0]),len(dist[0][0])))
+    plt.hist(dist, bins=25, density=True, alpha=0.6)
+    #print("Graphed")
+    xmin, xmax = plt.xlim()
+    #print("limits")
+    x = np.linspace(xmin, xmax, len(dist))
+    #print("linspace")
+    pdf = norm.pdf(x, mu, std)
+    #print("made it to pdf func end")
+    return pdf
+
 def Hellinger_Dist(p, q):
+    p = pdf_gen(p)
+    q = pdf_gen(q)
     hd = np.sqrt(np.sum((np.sqrt(p.ravel()) - np.sqrt(q.ravel())) ** 2)) / np.sqrt(2)
     return hd
 
@@ -66,24 +83,24 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     """
 
     # get random sample 
-    x_test_encoded = np.array(encoder.vae_encoder.predict(test_data, batch_size = 128))
-    plt.figure(figsize=(6,8))
-    plt.scatter(x_test_encoded[:, 0], x_test_encoded[:,1])
-    y_test = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Y_Land_Sea_Test.npy')
-    plt.scatter(x_test_encoded[2, :,0], x_test_encoded[2, :,1], c = y_test)
-    plt.colorbar()
-    plt.title("Latent Space Representation")
-    plt.savefig('./model_graphs/land_latent_space_{}.png'.format(id))
-    plt.close()
+    #x_test_encoded = np.array(encoder.vae_encoder.predict(test_data, batch_size = 128))
+    #plt.figure(figsize=(6,8))
+    #plt.scatter(x_test_encoded[:, 0], x_test_encoded[:,1])
+    #y_test = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Y_Land_Sea_Test.npy')
+    #plt.scatter(x_test_encoded[2, :,0], x_test_encoded[2, :,1], c = y_test)
+    #plt.colorbar()
+    #plt.title("Latent Space Representation")
+    #plt.savefig('./model_graphs/land_latent_space_{}.png'.format(id))
+    #plt.close()
     
-    plt.figure(figsize=(6,8))
-    plt.scatter(x_test_encoded[:, 0], x_test_encoded[:,1])
-    y_test = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Y_Convection_Test.npy')
-    plt.scatter(x_test_encoded[2, :,0], x_test_encoded[2, :,1], c = y_test)
-    plt.colorbar()
-    plt.title("Latent Space Representation")
-    plt.savefig('./model_graphs/Deep_Shallow_latent_space_{}.png'.format(id))
-    plt.close()
+    #plt.figure(figsize=(6,8))
+    #plt.scatter(x_test_encoded[:, 0], x_test_encoded[:,1])
+    #y_test = np.load('/fast/gmooers/Preprocessed_Data/W_100_X/Y_Convection_Test.npy')
+    #plt.scatter(x_test_encoded[2, :,0], x_test_encoded[2, :,1], c = y_test)
+    #plt.colorbar()
+    #plt.title("Latent Space Representation")
+    #plt.savefig('./model_graphs/Deep_Shallow_latent_space_{}.png'.format(id))
+    #plt.close()
     
     #plt.figure(figsize=(6,8))
     #plt.scatter(x_test_encoded[:, 0], x_test_encoded[:,1])
@@ -160,7 +177,7 @@ def sample_reconstructions(decoder, encoder, vae, train_data, test_data, id):
     recon_samples = []
     spectrum_pred = []
     spectrum_truth = []
-    samples = 2
+    samples = 3
     fig, ax = plt.subplots(samples,1)
     for i in range(samples):
         rand_sample = np.random.randint(0, len(test_data))
