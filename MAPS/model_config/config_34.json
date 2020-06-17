@@ -1,9 +1,9 @@
 {
-    "id": 33,
+    "id": 34,
     "optimizer": {
         "lr": 1e-4
     }, 
-    "kl_weight": 0.00125,
+    "kl_weight": 0.005,
     "annealing": true,
     "data": {
         "training_data_path": "/fast/gmooers/Preprocessed_Data/Centered_50_50/Space_Time_W_Training.npy",
@@ -15,7 +15,7 @@
     },
     "encoder": {
         "activation": "relu",
-        "latent_dim": 1024,
+        "latent_dim": 512,
         "conv_1": {
             "filter_num": 32,
             "kernel_size": [3, 3],
@@ -32,18 +32,18 @@
             "stride": 2
         },
         "conv_mu": {
-            "filter_num": 64,
+            "filter_num": 32,
             "kernel_size": [3, 3],
             "stride": 2
         }, 
         "conv_log_var": {
-            "filter_num": 64,
+            "filter_num": 32,
             "kernel_size": [3, 3],
             "stride": 2
         }
     },
     "decoder": {
-        "latent_dim": 1024,
+        "latent_dim": 512,
         "activation": "relu",
         "conv_t_0": {
             "filter_num": 64,

@@ -1,0 +1,56 @@
+{
+    "id": 30,
+    "optimizer": {
+        "lr": 5e-5
+    },
+    "loss": {
+        "start_weight":0.0,
+        "klstart":20,
+        "kl_annealtime":80
+    },
+    "data": {
+        "training_data_path": "/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_W_Training.npy",
+        "test_data_path": "/fast/gmooers/Preprocessed_Data/W_100_X/Space_Time_W_Test.npy"
+    },
+    "encoder": {
+        "activation": "relu",
+        "latent_dim": 2,
+        "conv_1": {
+            "filter_num": 32,
+            "kernel_size": [5,5],
+            "stride": 2
+        },
+        "conv_2": {
+            "filter_num": 32,
+            "kernel_size": [5,5],
+            "stride": 2
+        },
+        "dense_1": {
+            "dim": 100
+        }
+    },
+    "decoder": {
+        "latent_dim": 2,
+        "activation": "relu",
+        "conv_t_1": {
+            "filter_num": 32,
+            "kernel_size": [5,5],
+            "stride": 2
+        },
+        "conv_mu": {
+            "filter_num": 1,
+            "kernel_size": [7,7],
+            "stride": 2,
+            "activation": "sigmoid"
+        },
+        "conv_log_var": {
+            "filter_num": 1,
+            "kernel_size": [7,7],
+            "stride": 2,
+            "activation": "linear"
+        }
+    },
+    "batch_size": 128,
+    "train_epochs": 100
+    
+}
