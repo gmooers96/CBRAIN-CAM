@@ -14,7 +14,120 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA 
 from sklearn.manifold import TSNE
 
-from train_fully_conv import encoder_gen, decoder_gen
+from train_fully_conv import encoder_gen, decoder_gen, kl_reconstruction_loss
+import numpy as np
+import gc
+import tensorflow_probability as tfp 
+
+def f_norm(true, pred):
+    covariance_truth = tfp.stats.covariance(true)
+    covariance_prediction = tfp.stats.covariance(pred)
+    covariance_truth = tf.cast(covariance_truth, dtype=tf.float32)
+    f_dist = tf.norm(covariance_prediction-covariance_truth, ord="euclidean")
+    return f_dist
+
+def reconstruct_targets_paper(vae, test_data, targets, id, dataset_max, dataset_min):
+    """
+    TODO
+    """
+    original_samples = []
+    recon_means = []
+    recon_vars = []
+
+    vmin = 1000
+    vmax = -1
+
+    vmin_var = 1000
+    vmax_var = -1
+
+    for target in targets:
+
+        sample = test_data[target]
+        sample_mean_var = vae.predict(np.expand_dims(sample, 0))
+        sample_mean = sample_mean_var[0, :128*30]
+        sample_log_var = sample_mean_var[0, 128*30:]
+
+        # Sample reconstruction based on predicted mean and variance
+        recon_mean = sample_mean
+        recon_var = np.exp(sample_log_var)
+        recon_sample = recon_mean + recon_var
+        # recon_sample = np.random.multivariate_normal(sample_mean, np.exp(sample_log_var) * np.identity(128*30))
+        
+        # Rescale original sample and reconstruction to original scale
+        sample = np.interp(sample, (0, 1), (dataset_min, dataset_max))
+        recon_mean = np.interp(recon_mean, (0, 1), (dataset_min, dataset_max))
+        recon_sample = np.interp(recon_sample, (0, 1), (dataset_min, dataset_max))
+        recon_var = recon_sample - recon_mean
+
+        # Get min and max of original and reconstructed 
+        max_reconstructed = np.max(recon_mean)
+        max_recon_var = np.max(recon_var)
+        print("max of reconstructed", max_reconstructed)
+        max_sample = np.max(sample.reshape((128*30,)))
+        print("max of original", max_sample)
+        min_reconstructed = np.min(recon_mean)
+        min_recon_var = np.min(recon_var)
+        print("min of reconstructed", min_reconstructed)
+        min_sample = np.min(sample.reshape((128*30,)))
+        print("min of original", min_sample)
+
+        # Reshape reconstructed sample 
+        recon_mean = recon_mean.reshape((30, 128))
+        recon_var = recon_var.reshape((30, 128))
+
+        original_samples.append(sample[:, :, 0])
+        recon_means.append(recon_mean)
+        recon_vars.append(recon_var)
+
+        vmin = min(vmin, min_reconstructed, min_sample)
+        vmax = max(vmax, max_reconstructed, max_sample)
+
+        vmin_var = min(vmin_var, min_recon_var)
+        vmax_var = max(vmax_var, max_recon_var)
+
+    fig_size = plt.rcParams["figure.figsize"]
+    fig_size[0] = 10
+    fig_size[1] = 8
+    plt.rcParams["figure.figsize"] = fig_size
+    fig, axs = plt.subplots(len(targets), 2, sharex=True, sharey=True, constrained_layout=True)
+
+    def fmt(x, pos):
+        return "{:.2f}".format(x)
+
+    for i in range(len(targets)): 
+        y_ticks = np.arange(1400, 0, -400)
+        #print("y ticks", y_ticks)
+
+        sub_img = axs[i, 0].imshow(original_samples[i], cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        axs[i, 0].invert_yaxis()
+        axs[i, 0].set_yticklabels(y_ticks)
+
+        if i == 2:
+            axs[i, 0].set_ylabel("Pressure (hPa)", fontsize=12, labelpad=10)
+            
+        sub_img = axs[i, 1].imshow(recon_means[i], cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        axs[i, 1].invert_yaxis()
+
+        if i == 0:
+            axs[i, 0].set_title("Original")
+            axs[i, 1].set_title("VAE Reconstruction Mean")
+
+        if i == len(targets) - 1:
+            axs[i, 0].set_xlabel('CRMs', fontsize=12, labelpad=5)
+            axs[i, 1].set_xlabel('CRMs', fontsize=12, labelpad=5)
+            fig.colorbar(sub_img, ax=axs[:, 1], label="Vertical Velocity", shrink=0.6)
+        #axs[i,1].set_yticks([])
+        #if  i < len(targets) - 2:
+            #axs[i, 0].set_xticks([])
+            #axs[i, 1].set_xticks([])
+
+
+    # Hide x labels and tick labels for all but bottom plot.
+    for row in axs:
+        for ax in row:
+            ax.label_outer()
+
+    plt.savefig('./model_graphs/reconstructions/Paper_target_test_reconstructions_{}.png'.format(id))
 
 
 def reconstruct_targets(vae, test_data, targets, id, dataset_max, dataset_min):
@@ -186,53 +299,160 @@ def sample_latent_space(vae_encoder, train_data, test_data, id, dataset_min, dat
     """
 
     # Predict latent train & test data
+    #print(test_data.shape)
     _, _, z_test = vae_encoder.predict(test_data)
     _, _, z_train = vae_encoder.predict(train_data)
-
+    #print("This is z_test")
+    #print(z_test.shape)
     # Apply scaling and tsne 
     sc = StandardScaler()
     z_train_std = sc.fit_transform(z_train)
     
     z_test_std = sc.transform(z_test)
-
     # Instantiate PCA 
     pca = PCA(n_components=32)
     pca.fit(z_train_std)
 
     z_test_pca = pca.transform(z_test_std)
-
     # Instantiate TSNE
     tsne = TSNE(n_components=2)
 
     z_test_tsne = tsne.fit_transform(z_test_pca)
-    #np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Saved_Data/Latent_Space__{}".format(id), z_test_tsne)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Saved_Data/Other_Day_Latent_Space__{}".format(id), z_test_tsne)
     if dataset_type == "half_deep_convection":
         colors = ["#FF4940", "#3D9AD1"]
-        # Make plot of latent test data 
-        #plt.scatter(x=z_test_tsne[np.where(test_labels == 0), 0], y=z_test_tsne[np.where(test_labels == 0), 1], c=colors[0],s=1, label="Deep Convection")
-        #plt.scatter(x=z_test_tsne[np.where(test_labels == 1), 0], y=z_test_tsne[np.where(test_labels == 1), 1], c=colors[1], s=1, label="Shallow Convection")
         print("made it here")
         convection = np.squeeze(z_test_tsne[np.where(test_labels == 0),:])
         no_convection = np.squeeze(z_test_tsne[np.where(test_labels == 1),:])
-        fake = np.squeeze(z_test_tsne[np.where(test_labels == 2),:])
+        #fake = np.squeeze(z_test_tsne[np.where(test_labels == 2),:])
         plt.scatter(x=convection[:, 0], y=convection[:, 1], c="#FF4940", s=0.4, label="No Convective Activity")
         plt.scatter(x=no_convection[:, 0], y=no_convection[:, 1], c="#3D9AD1", s=0.4, label="Convective Activity")
-        plt.scatter(x=fake[:, 0], y=fake[:, 1], c="yellow", s=0.4, label="Blue Noise")
+        #plt.scatter(x=fake[:, 0], y=fake[:, 1], c="yellow", s=0.4, label="Blue Noise")
         plt.legend()
 
     else:
-        plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], c=test_labels, s=1)
+        #plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], c=test_labels, s=1)
+        plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], s=0.1)
         plt.colorbar()
 
-    plt.savefig('./model_graphs/latent_space/99_Blue_Noisy_Image_binary_latent_space_with_pca_{}.png'.format(id))
+    plt.savefig('./model_graphs/latent_space/Other_Day_binary_latent_space_with_pca_{}.png'.format(id))
 
+
+def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type): 
+    """
+    Create a scatter plot of the latent space containing all test samples.
+    """
+
+    # Predict latent train & test data
+    test_mean, test_log_var, z_test = vae_encoder.predict(test_data)
+    train_mean, train_log_var, z_train = vae_encoder.predict(train_data)
+    #np.save("Saved_Data/Test_Z_Samples.npy", z_test)
+    #np.save("Saved_Data/Test_Mean_Samples.npy", test_mean)
+    #np.save("Saved_Data/Test_Log_Var_Samples.npy", test_log_var)
+    #print(gdfgdgdsgdsfgdfg)
+    train_mean_var = np.concatenate((train_mean, train_log_var), axis=1)
+    test_mean_var = np.concatenate((test_mean, test_log_var), axis=1)
+    #np.save("Saved_Data/Train_High_Dim_Latent_Space.npy", train_mean_var)
+    #np.save("Saved_Data/Test_High_Dim_Latent_Space.npy", test_mean_var)
+    # Apply scaling and tsne 
+    sc = StandardScaler()
+    z_train_std = sc.fit_transform(train_mean_var)
+    #z_train_std = sc.fit_transform(train_log_var)
+    
+    z_test_std = sc.transform(test_mean_var)
+    #z_test_std = sc.transform(test_log_var)
+    # Instantiate PCA 
+    pca = PCA(n_components=32)
+    pca.fit(z_train_std)
+
+    z_test_pca = pca.transform(z_test_std)
+    # Instantiate TSNE
+    tsne = TSNE(n_components=2)
+
+    z_test_tsne = tsne.fit_transform(z_test_pca)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Saved_Data/Trial_Amazon_Diurnal_Mean_Var_Latent_Space__{}".format(id), z_test_tsne)
+    if dataset_type == "half_deep_convection":
+        colors = ["#FF4940", "#3D9AD1"]
+        print("made it here")
+        convection = np.squeeze(z_test_tsne[np.where(test_labels == 0),:])
+        no_convection = np.squeeze(z_test_tsne[np.where(test_labels == 1),:])
+        #fake = np.squeeze(z_test_tsne[np.where(test_labels == 2),:])
+        plt.scatter(x=convection[:, 0], y=convection[:, 1], c="#FF4940", s=0.4, label="No Convective Activity")
+        plt.scatter(x=no_convection[:, 0], y=no_convection[:, 1], c="#3D9AD1", s=0.4, label="Convective Activity")
+        #plt.scatter(x=fake[:, 0], y=fake[:, 1], c="yellow", s=0.4, label="Blue Noise")
+        plt.legend()
+
+    else:
+        #plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], c=test_labels, s=1)
+        plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], s=0.1)
+        plt.colorbar()
+
+    plt.savefig('./model_graphs/latent_space/Trial_Amazon_Diurnal_Mean_Var_latent_space_with_pca_{}.png'.format(id))    
+
+    
+    
+def sample_frob_norm(vae, decoder, vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type): 
+    """
+    Create a scatter plot of the latent space containing all test samples.
+    """
+
+    # Predict latent train & test data
+    test_mean, test_log_var, z_test = vae_encoder.predict(test_data)
+    print("made it here")
+    sample_mean_var = decoder.predict(z_test) 
+    sample_mean = sample_mean_var[:, :128*30]
+    truths = np.reshape(test_data, (len(test_data),30*128))
+    
+
+    Rough_Metric = f_norm(truths, sample_mean)
+    
+    sess = tf.InteractiveSession()
+    RM = Rough_Metric.eval()
+    gc.collect()
+    print(RM.shape)
+    print(RM)
+    np.save("Saved_Data/Rough_Overall_FR_Norm__{}.npy".format(id), RM)
+    print("completed")      
+    
+def sample_anon_detect(vae, decoder, vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type): 
+    """
+    Create a scatter plot of the latent space containing all test samples.
+    """
+
+    # Predict latent train & test data
+    test_mean, test_log_var, z_test = vae_encoder.predict(test_data)
+    #train_mean, train_log_var, z_train = vae_encoder.predict(train_data)
+    print("the shape of the test data is",test_data.shape)
+    print("the shape of test mean is",test_mean.shape)
+    print("the shape of test log var is",test_log_var.shape)
+    print("the shape of z test is",z_test.shape)
+    print("made it here")
+    sample_mean_var = decoder.predict(z_test) 
+    sample_mean = sample_mean_var[:, :128*30]
+    sample_log_var = sample_mean_var[:, 128*30:]
+    print("the shape of the decoder output is", sample_mean_var.shape)
+    print("the shape of the sample mean is", sample_mean.shape)
+    print("The shape of the sample log var is", sample_log_var.shape)
+    print("hello there")
+    losses = kl_reconstruction_loss(test_log_var, test_mean, vae)
+    truths = np.reshape(test_data, (len(test_data),30*128))
+    print("The reshaped test data is", truths.shape)
+    something = losses(truths,sample_mean_var)
+    sess = tf.InteractiveSession()
+    elbo = something.eval()
+    gc.collect()
+    print(elbo.shape)
+    np.save("Saved_Data/50_50_Centered_31_elbo.npy",elbo)
+    print("completed")
+    
+    
 def generate_samples(decoder, dataset_min, dataset_max, latent_dim: int, id):
     """
     Sample points from prior and send through decoder to get 
     sample images.
     """
     # sample from prior 
-    num_samples = 5
+    num_samples = 3
     z = np.random.normal(size=(num_samples, latent_dim))
 
     # Get output from decoder 
@@ -242,11 +462,12 @@ def generate_samples(decoder, dataset_min, dataset_max, latent_dim: int, id):
     sample_mean = sample_mean_var[:, :128*30]
     sample_log_var = sample_mean_var[:, 128*30:]
 
-    fig, axs = plt.subplots(5, 1)
+    fig, axs = plt.subplots(num_samples, 1)
 
     recon_samples = []
     for i in range(num_samples):
         print(sample_mean[i])
+        print(sample_log_var[i])
         print(sample_mean[i].shape)
         # Sample from gaussian decoder outputs 
         recon_sample = np.random.multivariate_normal(sample_mean[i], np.exp(sample_log_var[i]) * np.identity(128*30))
@@ -261,15 +482,18 @@ def generate_samples(decoder, dataset_min, dataset_max, latent_dim: int, id):
 
     vmin = np.min(recon_samples)
     vmax = np.max(recon_samples)
+    print(vmin, vmax)
     for i in range(num_samples):
         # Show image
-        sub_img = axs[i].imshow(recon_sample, cmap='coolwarm', vmin=vmin, vmax=vmax)
+        sub_img = axs[i].imshow(recon_samples[i], cmap='coolwarm', vmin=vmin, vmax=vmax)
+        fig.colorbar(sub_img, ax=axs[i])
 
         # Flip y-axis
         axs[i].set_ylim(axs[i].get_ylim()[::-1])
         
     # fig.colorbar(sub_img, ax=axs)
     plt.tight_layout()
+    #plt.suptitle("Generated W Fields")
     plt.savefig('./model_graphs/generated/generated_samples_{}.png'.format(id))
 
 
@@ -301,7 +525,7 @@ def main():
     print("Image shape:", img_width, img_height)
     
     # Construct VAE Encoder 
-    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"])
+    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"], args.id)
 
     # Construct VAE Decoder 
     vae_decoder = decoder_gen(
@@ -321,9 +545,13 @@ def main():
     test_data = test_data.reshape(test_data.shape+(1,))
 
     # get side by side plots of original vs. reconstructed
+    sample_frob_norm(vae, vae_decoder, encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #reconstruct_targets_paper(vae, test_data, [2, 15, 66 , 85, 94], args.id, dataset_max, dataset_min)
     #sample_reconstructions(vae, train_data, test_data, args.id, dataset_max, dataset_min)
     #reconstruct_targets(vae, test_data, [2, 15, 66 , 85, 94], args.id, dataset_max, dataset_min)
-    sample_latent_space(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #sample_latent_space(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #sample_latent_space_var(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #sample_anon_detect(vae, vae_decoder, encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
     #generate_samples(vae_decoder, dataset_min, dataset_max, model_config["encoder"]["latent_dim"], args.id)
 
 def argument_parsing():
