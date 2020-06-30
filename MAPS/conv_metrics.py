@@ -92,6 +92,7 @@ def spectral_plot(truth_array, pred_array, frequency, labeler, id):
     plt.xscale('log')
     plt.title("Signal at "+labeler+" HPa")
     plt.savefig('./model_graphs/spectral/'+labeler+'_overall_fft_{}.png'.format(id))
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/CI_Figure_Data/ELBO_Prediction_"+labeler+"_.npy", pred_array)
     plt.close()
 
     
@@ -280,8 +281,8 @@ def main():
     print("Image shape:", img_width, img_height)
 
     # Construct VAE Encoder 
-    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"])
-    encoder_result_random = encoder_gen((img_width, img_height), model_config["encoder"])
+    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"], args.id)
+    encoder_result_random = encoder_gen((img_width, img_height), model_config["encoder"], args.id)
 
     # Construct VAE Decoder 
     vae_decoder = decoder_gen(
