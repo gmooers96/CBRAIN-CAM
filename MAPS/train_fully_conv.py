@@ -46,6 +46,12 @@ def kl_reconstruction_loss(z_log_var, z_mean, vae):
         x_log_var = pred[:, 128*30:]
 
         # Gaussian reconstruction loss
+        
+        #griffins edits for anomaly detection
+        #x_mu = x_mu.astype('float64') 
+        #x_log_var = x_log_var.astype('float64')
+        #end griffins edits
+        
         mse = -0.5 * K.sum(K.square(true - x_mu)/K.exp(x_log_var), axis=1)
         var_trace = -0.5 * K.sum(x_log_var, axis=1)
         log2pi = -0.5 * 128 * 30 * np.log(2 * np.pi)
@@ -60,13 +66,13 @@ def kl_reconstruction_loss(z_log_var, z_mean, vae):
         kl_loss = 1 + z_log_var - K.square(z_mean) - K.exp(z_log_var)
         kl_loss = K.sum(kl_loss, axis=1)
         kl_loss *= -0.5
-        
-        # Total loss = 50% rec + 50% KL divergence loss
-        # NOTE: On ruihan's advice, I will weight KL down
-
-        # kl_weight = K.print_tensor(vae.kl_weight, message='EULA PEULA')
 
         return K.mean(reconstruction_loss + vae.kl_weight * kl_loss)
+        
+        #for anon dectation
+        #kl_loss = tf.cast(kl_loss, dtype=tf.float64)
+        #return -0.5*(reconstruction_loss + kl_loss)
+        #end anon detection edits
 
     return _kl_reconstruction_loss
 
@@ -79,6 +85,7 @@ def kl(z_log_var, z_mean):
         kl_loss = K.sum(kl_loss, axis=-1)
         kl_loss *= -0.5
         # kl_loss = K.print_tensor(kl_loss, message='EULA PEULA')
+        #return vae.kl_weight
         return K.mean(kl_loss)
     
     return _kl
@@ -101,7 +108,7 @@ def reconstruction(true, pred):
 
     return K.mean(-log_likelihood)
 
-def encoder_gen(input_shape: tuple, encoder_config: dict):
+def encoder_gen(input_shape: tuple, encoder_config: dict, id):
     """
     Create the architecture for the VAE encoder. 
     """
@@ -183,7 +190,7 @@ def encoder_gen(input_shape: tuple, encoder_config: dict):
 
     # Instantiate Keras model for VAE encoder 
     vae_encoder = keras.Model(inputs=[inputs], outputs=[z_mean, z_log_var, z])
-
+    plot_model(vae_encoder, to_file='./model_graphs/model_diagrams/decoder_{}.png'.format(id), show_shapes=True)
     # Package up everything for the encoder
     encoder_result.inputs = inputs
     encoder_result.z_mean = z_mean
@@ -205,7 +212,8 @@ def decoder_gen(
     #for original case - for latent space size 64 - config 38
     #x = keras.layers.Reshape((2, 8, 4))(decoder_inputs)
     #superior for 1024 - works best - config 35
-    x = keras.layers.Reshape((2, 8, 64))(decoder_inputs)
+    #x = keras.layers.Reshape((2, 8, 64))(decoder_inputs)
+    x = keras.layers.Reshape((decoder_config["latent_reshape"]["dim_1"], decoder_config["latent_reshape"]["dim_2"], decoder_config["latent_reshape"]["dim_3"]))(decoder_inputs)
     #for foster arch - config 34
     #x = keras.layers.Reshape((2, 8, 32))(decoder_inputs)
     x = keras.layers.convolutional.Conv2DTranspose(
@@ -334,16 +342,18 @@ def main():
     print("Image shape:", img_width, img_height)
     
     # Construct VAE Encoder 
-    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"])
+    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"], args.id)
 
     # Construct VAE Decoder 
     vae_decoder = decoder_gen(
         (img_width, img_height),  
         model_config["decoder"]
     )
+    plot_model(vae_decoder, to_file='./model_graphs/model_diagrams/decoder_{}.png'.format(args.id), show_shapes=True)
     _, _, z = encoder_result.vae_encoder(encoder_result.inputs)
     x_mu_log_var = vae_decoder(z)
     vae = keras.Model(inputs=[encoder_result.inputs], outputs=[x_mu_log_var])
+    plot_model(vae, to_file='./model_graphs/model_diagrams/full_vae_{}.png'.format(args.id), show_shapes=True)
     vae.kl_weight = K.variable(model_config["kl_weight"])
 
     # Specify the optimizer 
