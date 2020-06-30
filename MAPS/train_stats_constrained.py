@@ -51,7 +51,7 @@ def kl_reconstruction_loss(z_log_var, z_mean, vae, lambda_weight):
         log2pi = -0.5 * 128 * 30 * np.log(2 * np.pi)
         
         log_likelihood = mse + var_trace + log2pi
-        print("log likelihood shape", log_likelihood.shape)
+        #print("log likelihood shape", log_likelihood.shape)
 
         # NOTE: We don't take a mean here, since we first want to add the KL term
         reconstruction_loss = -log_likelihood
@@ -61,14 +61,13 @@ def kl_reconstruction_loss(z_log_var, z_mean, vae, lambda_weight):
         kl_loss = K.sum(kl_loss, axis=1)
         kl_loss *= -0.5
         
-        #####################################################################################
-        #add in statistics contraint
-        pred = tf.reshape(pred, [-1, 128 * 30])
         covariance_truth = tfp.stats.covariance(true)
-        covariance_prediction = tfp.stats.covariance(pred)
-        Frobenius_norm = tf.norm(covariance_prediction, ord="euclidean")
+        covariance_prediction = tfp.stats.covariance(x_mu)
+        Frobenius_norm = tf.norm(covariance_prediction-covariance_truth, ord="euclidean")
+        #Frobenius_norm = K.sum(Frobenius_norm, axis = 1)
         #####################################################################################
-        return K.mean(reconstruction_loss + vae.kl_weight * kl_loss)+lambda_weight*Frobenius_norm
+        return K.mean(reconstruction_loss + vae.kl_weight*kl_loss + lambda_weight*Frobenius_norm)
+        
 
     return _kl_reconstruction_loss
 
@@ -106,14 +105,29 @@ def reconstruction(true, pred):
 def constrainer(z_log_var, z_mean, lambda_weight):
     def _constrainer(true, pred):
         true = tf.reshape(true, [-1, 128 * 30])
-        pred = tf.reshape(pred, [-1, 128 * 30])
+        x_mu = pred[:, :128*30]
         covariance_truth = tfp.stats.covariance(true)
-        covariance_prediction = tfp.stats.covariance(pred)
-        Frobenius_norm = tf.norm(covariance_prediction, ord="euclidean")
+        covariance_prediction = tfp.stats.covariance(x_mu)
+        Frobenius_norm = tf.norm(covariance_prediction-covariance_truth, ord="euclidean")
         return lambda_weight*Frobenius_norm
+        #return 1000000.0*Frobenius_norm
     return _constrainer
 
-def encoder_gen(input_shape: tuple, encoder_config: dict):
+def power_spectrum(z_log_var, z_mean):
+    def _power_spectrum(true, pred):
+        p850 = tf.reshape(pred[22,:], [-1, 128 ])
+        t850 = tf.reshape(true[22,:], [-1, 128 ])
+        p850 = tf.cast(p850, dtype=tf.float32)
+        t850 = tf.cast(t850, dtype=tf.float32)
+        P_pred = tf.signal.rfft(p850)*tf.math.conj(tf.signal.rfft(p850))
+        P_truth = tf.signal.rfft(t850)*tf.math.conj(tf.signal.rfft(t850))
+        spectrum_loss = tf.math.square(tf.math.log(P_pred/P_truth)) 
+        spectrum_loss = tf.cast(spectrum_loss, dtype=tf.float32)
+        #sprectrum_loss = K.sum(spectrum_loss, axis = 1)
+        return spectrum_loss
+    return _power_spectrum
+
+def encoder_gen(input_shape: tuple, encoder_config: dict, id):
     """
     Create the architecture for the VAE encoder. 
     """
@@ -195,7 +209,7 @@ def encoder_gen(input_shape: tuple, encoder_config: dict):
 
     # Instantiate Keras model for VAE encoder 
     vae_encoder = keras.Model(inputs=[inputs], outputs=[z_mean, z_log_var, z])
-
+    plot_model(vae_encoder, to_file='./model_graphs/model_diagrams/encoder_{}.png'.format(id), show_shapes=True)
     # Package up everything for the encoder
     encoder_result.inputs = inputs
     encoder_result.z_mean = z_mean
@@ -217,7 +231,6 @@ def decoder_gen(
     #for original case - for latent space size 64 - config 38
     #x = keras.layers.Reshape((2, 8, 4))(decoder_inputs)
     #superior for 1024 - works best - config 35
-    decoder_config["latent_reshape"]["dim_1"]
     x = keras.layers.Reshape((decoder_config["latent_reshape"]["dim_1"], decoder_config["latent_reshape"]["dim_2"], decoder_config["latent_reshape"]["dim_3"]))(decoder_inputs)
     #for foster arch - config 34
     #x = keras.layers.Reshape((2, 8, 32))(decoder_inputs)
@@ -334,7 +347,7 @@ def plot_training_losses(h, id):
     ax4.plot(epochs, constraint_valid_losses, 'r', label='Valid')
     ax4.set(xlabel="Epochs", ylabel="Loss")
     ax4.legend(prop={'size': 10})
-    ax4.set_title("Constraining Loss Term")
+    ax4.set_title("Spectral Loss Term")
     
     plt.tight_layout()
 
@@ -357,16 +370,17 @@ def main():
     print("Image shape:", img_width, img_height)
     
     # Construct VAE Encoder 
-    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"])
-
+    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"], args.id)
     # Construct VAE Decoder 
     vae_decoder = decoder_gen(
         (img_width, img_height),  
         model_config["decoder"]
     )
+    plot_model(vae_decoder, to_file='./model_graphs/model_diagrams/decoder_{}.png'.format(args.id), show_shapes=True)
     _, _, z = encoder_result.vae_encoder(encoder_result.inputs)
     x_mu_log_var = vae_decoder(z)
     vae = keras.Model(inputs=[encoder_result.inputs], outputs=[x_mu_log_var])
+    plot_model(vae, to_file='./model_graphs/model_diagrams/full_vae_{}.png'.format(args.id), show_shapes=True)
     vae.kl_weight = K.variable(model_config["kl_weight"])
 
     # Specify the optimizer 
@@ -402,6 +416,7 @@ def main():
             )
         ]
     )
+    
     vae.summary()
 
     train_data = train_data.reshape(train_data.shape+(1,))
