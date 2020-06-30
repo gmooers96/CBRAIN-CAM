@@ -15,6 +15,122 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from train_stats_constrained import encoder_gen, decoder_gen
+import numpy as np
+import gc 
+import tensorflow_probability as tfp 
+
+def f_norm(true, pred):
+    covariance_truth = tfp.stats.covariance(true)
+    covariance_prediction = tfp.stats.covariance(pred)
+    covariance_truth = tf.cast(covariance_truth, dtype=tf.float32)
+    f_dist = tf.norm(covariance_prediction-covariance_truth, ord="euclidean")
+    return f_dist
+
+
+def reconstruct_targets_paper(vae, test_data, targets, id, dataset_max, dataset_min):
+    """
+    TODO
+    """
+    original_samples = []
+    recon_means = []
+    recon_vars = []
+
+    vmin = 1000
+    vmax = -1
+
+    vmin_var = 1000
+    vmax_var = -1
+
+    for target in targets:
+
+        sample = test_data[target]
+        sample_mean_var = vae.predict(np.expand_dims(sample, 0))
+        sample_mean = sample_mean_var[0, :128*30]
+        sample_log_var = sample_mean_var[0, 128*30:]
+
+        # Sample reconstruction based on predicted mean and variance
+        recon_mean = sample_mean
+        recon_var = np.exp(sample_log_var)
+        recon_sample = recon_mean + recon_var
+        # recon_sample = np.random.multivariate_normal(sample_mean, np.exp(sample_log_var) * np.identity(128*30))
+        
+        # Rescale original sample and reconstruction to original scale
+        sample = np.interp(sample, (0, 1), (dataset_min, dataset_max))
+        recon_mean = np.interp(recon_mean, (0, 1), (dataset_min, dataset_max))
+        recon_sample = np.interp(recon_sample, (0, 1), (dataset_min, dataset_max))
+        recon_var = recon_sample - recon_mean
+
+        # Get min and max of original and reconstructed 
+        max_reconstructed = np.max(recon_mean)
+        max_recon_var = np.max(recon_var)
+        print("max of reconstructed", max_reconstructed)
+        max_sample = np.max(sample.reshape((128*30,)))
+        print("max of original", max_sample)
+        min_reconstructed = np.min(recon_mean)
+        min_recon_var = np.min(recon_var)
+        print("min of reconstructed", min_reconstructed)
+        min_sample = np.min(sample.reshape((128*30,)))
+        print("min of original", min_sample)
+
+        # Reshape reconstructed sample 
+        recon_mean = recon_mean.reshape((30, 128))
+        recon_var = recon_var.reshape((30, 128))
+
+        original_samples.append(sample[:, :, 0])
+        recon_means.append(recon_mean)
+        recon_vars.append(recon_var)
+
+        vmin = min(vmin, min_reconstructed, min_sample)
+        vmax = max(vmax, max_reconstructed, max_sample)
+
+        vmin_var = min(vmin_var, min_recon_var)
+        vmax_var = max(vmax_var, max_recon_var)
+
+    fig_size = plt.rcParams["figure.figsize"]
+    fig_size[0] = 10
+    fig_size[1] = 8
+    plt.rcParams["figure.figsize"] = fig_size
+    fig, axs = plt.subplots(len(targets), 2, sharex=True, sharey=True, constrained_layout=True)
+
+    def fmt(x, pos):
+        return "{:.2f}".format(x)
+    np.save("CI_Figure_Data/True_Means.npy", original_samples)
+    np.save("CI_Figure_Data/Reconstruct_Means.npy", recon_means)
+    for i in range(len(targets)): 
+        y_ticks = np.arange(1400, 0, -400)
+        #print("y ticks", y_ticks)
+
+        sub_img = axs[i, 0].imshow(original_samples[i], cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        axs[i, 0].invert_yaxis()
+        axs[i, 0].set_yticklabels(y_ticks)
+
+        if i == 2:
+            axs[i, 0].set_ylabel("Pressure (hpa)", fontsize=12, labelpad=10)
+            
+        sub_img = axs[i, 1].imshow(recon_means[i], cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        axs[i, 1].invert_yaxis()
+
+        if i == 0:
+            axs[i, 0].set_title("Original", fontsize = 12)
+            axs[i, 1].set_title("VAE Reconstruction Mean",fontsize=12)
+
+        if i == len(targets) - 1:
+            axs[i, 0].set_xlabel('CRMs', fontsize=12, labelpad=5)
+            axs[i, 1].set_xlabel('CRMs', fontsize=12, labelpad=5)
+            fig.colorbar(sub_img, ax=axs[:, 1], label="Vertical Velocity", shrink=0.6)
+        #axs[i,1].set_yticks([])
+        #if  i < len(targets) - 2:
+            #axs[i, 0].set_xticks([])
+            #axs[i, 1].set_xticks([])
+
+
+    # Hide x labels and tick labels for all but bottom plot.
+    for row in axs:
+        for ax in row:
+            ax.label_outer()
+
+    plt.savefig('./model_graphs/reconstructions/Paper_target_test_reconstructions_{}.png'.format(id))
+    plt.savefig('./model_graphs/reconstructions/Paper_target_test_reconstructions_{}.pdf'.format(id))
 
 
 def reconstruct_targets(vae, test_data, targets, id, dataset_max, dataset_min):
@@ -205,7 +321,7 @@ def sample_latent_space(vae_encoder, train_data, test_data, id, dataset_min, dat
     tsne = TSNE(n_components=2)
 
     z_test_tsne = tsne.fit_transform(z_test_pca)
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Saved_Data/Latent_Space__{}".format(id), z_test_tsne)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Saved_Data/Amazon_Latent_Space__{}".format(id), z_test_tsne)
     if dataset_type == "half_deep_convection":
         colors = ["#FF4940", "#3D9AD1"]
         # Make plot of latent test data 
@@ -221,18 +337,95 @@ def sample_latent_space(vae_encoder, train_data, test_data, id, dataset_min, dat
         plt.legend()
 
     else:
-        plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], c=test_labels, s=1)
+        plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], s=1)
         plt.colorbar()
 
-    plt.savefig('./model_graphs/latent_space/binary_latent_space_with_pca_{}.png'.format(id))
+    plt.savefig('./model_graphs/latent_space/Amazon_binary_latent_space_with_pca_{}.png'.format(id))
 
+
+def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type): 
+    """
+    Create a scatter plot of the latent space containing all test samples.
+    """
+
+    # Predict latent train & test data
+    test_mean, test_log_var, z_test = vae_encoder.predict(test_data)
+    train_mean, train_log_var, z_train = vae_encoder.predict(train_data)
+    #np.save("Saved_Data/Covariance_Test_Z_Samples.npy", z_test)
+    #np.save("Saved_Data/Covariance_Test_Mean_Samples.npy", test_mean)
+    #np.save("Saved_Data/Covariance_Test_Log_Var_Samples.npy", test_log_var)
+    #print(gdfgdgdsgdsfgdfg)
+    train_mean_var = np.concatenate((train_mean, train_log_var), axis=1)
+    test_mean_var = np.concatenate((test_mean, test_log_var), axis=1)
+    #np.save("Saved_Data/Covariance_Train_High_Dim_Latent_Space.npy", train_mean_var)
+    #np.save("Saved_Data/Covariance_Test_High_Dim_Latent_Space.npy", test_mean_var)
+    # Apply scaling and tsne 
+    sc = StandardScaler()
+    z_train_std = sc.fit_transform(train_mean_var)
+    #z_train_std = sc.fit_transform(train_log_var)
+    
+    z_test_std = sc.transform(test_mean_var)
+    #z_test_std = sc.transform(test_log_var)
+    # Instantiate PCA 
+    pca = PCA(n_components=32)
+    pca.fit(z_train_std)
+
+    z_test_pca = pca.transform(z_test_std)
+    # Instantiate TSNE
+    tsne = TSNE(n_components=2,  perplexity=100.0)
+
+    z_test_tsne = tsne.fit_transform(z_test_pca)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Saved_Data/Amazon_Covariance_Perplexity_100_1000_TSNE_Mean_Var_Latent_Space__{}".format(id), z_test_tsne)
+    if dataset_type == "half_deep_convection":
+        colors = ["#FF4940", "#3D9AD1"]
+        print("made it here")
+        convection = np.squeeze(z_test_tsne[np.where(test_labels == 0),:])
+        no_convection = np.squeeze(z_test_tsne[np.where(test_labels == 1),:])
+        #fake = np.squeeze(z_test_tsne[np.where(test_labels == 2),:])
+        plt.scatter(x=convection[:, 0], y=convection[:, 1], c="#FF4940", s=0.4, label="No Convective Activity")
+        plt.scatter(x=no_convection[:, 0], y=no_convection[:, 1], c="#3D9AD1", s=0.4, label="Convective Activity")
+        #plt.scatter(x=fake[:, 0], y=fake[:, 1], c="yellow", s=0.4, label="Blue Noise")
+        plt.legend()
+
+    else:
+        #plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], c=test_labels, s=1)
+        plt.scatter(x=z_test_tsne[:, 0], y=z_test_tsne[:, 1], s=0.1)
+        plt.colorbar()
+
+    plt.savefig('./model_graphs/latent_space/Amazon_Composite_Covariance__Perplexity_100_1000_TSNE_Mean_Var_latent_space_with_pca_{}.png'.format(id))    
+
+def sample_frob_norm(vae, decoder, vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type): 
+    """
+    Create a scatter plot of the latent space containing all test samples.
+    """
+
+    # Predict latent train & test data
+    test_mean, test_log_var, z_test = vae_encoder.predict(test_data)
+    print("made it here")
+    sample_mean_var = decoder.predict(z_test) 
+    sample_mean = sample_mean_var[:, :128*30]
+    truths = np.reshape(test_data, (len(test_data),30*128))
+    
+
+    Rough_Metric = f_norm(truths, sample_mean)
+    
+    sess = tf.InteractiveSession()
+    RM = Rough_Metric.eval()
+    gc.collect()
+    print(RM.shape)
+    print(RM)
+    np.save("Saved_Data/Rough_Overall_FR_Norm__{}.npy".format(id), RM)
+    print("completed")   
+    
+    
+    
 def generate_samples(decoder, dataset_min, dataset_max, latent_dim: int, id):
     """
     Sample points from prior and send through decoder to get 
     sample images.
     """
     # sample from prior 
-    num_samples = 5
+    num_samples = 3
     z = np.random.normal(size=(num_samples, latent_dim))
 
     # Get output from decoder 
@@ -242,7 +435,7 @@ def generate_samples(decoder, dataset_min, dataset_max, latent_dim: int, id):
     sample_mean = sample_mean_var[:, :128*30]
     sample_log_var = sample_mean_var[:, 128*30:]
 
-    fig, axs = plt.subplots(5, 1)
+    fig, axs = plt.subplots(num_samples, 1)
 
     recon_samples = []
     for i in range(num_samples):
@@ -263,14 +456,14 @@ def generate_samples(decoder, dataset_min, dataset_max, latent_dim: int, id):
     vmax = np.max(recon_samples)
     for i in range(num_samples):
         # Show image
-        sub_img = axs[i].imshow(recon_sample, cmap='coolwarm', vmin=vmin, vmax=vmax)
-
+        sub_img = axs[i].imshow(recon_samples[i], cmap='coolwarm', vmin=vmin, vmax=vmax)
+        fig.colorbar(sub_img, ax=axs[i])
         # Flip y-axis
         axs[i].set_ylim(axs[i].get_ylim()[::-1])
         
     # fig.colorbar(sub_img, ax=axs)
     plt.tight_layout()
-    plt.savefig('./model_graphs/generated_samples_{}.png'.format(id))
+    plt.savefig('./model_graphs/generated/generated_samples_{}.png'.format(id))
 
 
 
@@ -301,18 +494,15 @@ def main():
     print("Image shape:", img_width, img_height)
     
     # Construct VAE Encoder 
-    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"])
-
+    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"], args.id)
     # Construct VAE Decoder 
     vae_decoder = decoder_gen(
         (img_width, img_height),  
         model_config["decoder"]
     )
-
     _, _, z = encoder_result.vae_encoder(encoder_result.inputs)
     x_mu_var = vae_decoder(z)
     vae = keras.Model(inputs=[encoder_result.inputs], outputs=[x_mu_var])
-
     # load weights from file
     vae.load_weights('./models/model_{}.th'.format(args.id))
     print("weights loaded")
@@ -322,9 +512,13 @@ def main():
 
     # get side by side plots of original vs. reconstructed
     # sample_reconstructions(vae, train_data, test_data, args.id, dataset_max, dataset_min)
-    reconstruct_targets(vae, test_data, [2, 15, 66 , 85, 94], args.id, dataset_max, dataset_min)
+    #reconstruct_targets(vae, test_data, [2, 15, 66 , 85, 94], args.id, dataset_max, dataset_min)
+    reconstruct_targets_paper(vae, test_data, [23506, 66 , 23746], args.id, dataset_max, dataset_min)
+    #reconstruct_targets_paper(vae, test_data, [2, 15, 66 , 85, 94], args.id, dataset_max, dataset_min)
     #sample_latent_space(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
-    # generate_samples(vae_decoder, dataset_min, dataset_max, model_config["encoder"]["latent_dim"], args.id)
+    #sample_latent_space_var(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #sample_frob_norm(vae, vae_decoder, encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #generate_samples(vae_decoder, dataset_min, dataset_max, model_config["encoder"]["latent_dim"], args.id)
 
 def argument_parsing():
     parser = argparse.ArgumentParser()
