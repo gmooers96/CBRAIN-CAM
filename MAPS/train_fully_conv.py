@@ -1,5 +1,6 @@
 import math
 import os 
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 import argparse
 import json 
 
@@ -35,6 +36,46 @@ class Sampling(keras.layers.Layer):
         mean, log_var = inputs
         return K.random_normal(tf.shape(log_var)) * K.exp(log_var/2) + mean
 
+def ELBO_Test(z_log_var, z_mean, vae):
+    def _ELBO_Test(true, pred):
+        """
+        TODO 
+        """
+        true = tf.reshape(true, [-1, 128 * 30])
+
+        x_mu = pred[:, :128*30]
+        x_log_var = pred[:, 128*30:]
+
+        # Gaussian reconstruction loss
+        
+        #griffins edits for anomaly detection
+        x_mu = x_mu.astype('float64') 
+        x_log_var = x_log_var.astype('float64')
+        #end griffins edits
+        
+        mse = -0.5 * K.sum(K.square(true - x_mu)/K.exp(x_log_var), axis=1)
+        var_trace = -0.5 * K.sum(x_log_var, axis=1)
+        log2pi = -0.5 * 128 * 30 * np.log(2 * np.pi)
+        
+        log_likelihood = mse + var_trace + log2pi
+        print("log likelihood shape", log_likelihood.shape)
+
+        # NOTE: We don't take a mean here, since we first want to add the KL term
+        reconstruction_loss = -log_likelihood
+
+        # KL divergence loss
+        kl_loss = 1 + z_log_var - K.square(z_mean) - K.exp(z_log_var)
+        kl_loss = K.sum(kl_loss, axis=1)
+        kl_loss *= -0.5
+
+        #for anon dectation
+        kl_loss = tf.cast(kl_loss, dtype=tf.float64)
+        return -0.5*(reconstruction_loss + kl_loss)
+        #end anon detection edits
+
+    return _ELBO_Test
+    
+    
 def kl_reconstruction_loss(z_log_var, z_mean, vae):
     def _kl_reconstruction_loss(true, pred):
         """
@@ -320,6 +361,7 @@ def plot_training_losses(h, id):
     ax3.set(xlabel="Epochs", ylabel="Loss")
     ax3.legend(prop={'size': 10})
     ax3.set_title("Reconstruction Loss")
+    ax3.set_ylim(-25000, 10000)
     
     plt.tight_layout()
 

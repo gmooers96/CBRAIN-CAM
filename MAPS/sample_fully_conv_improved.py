@@ -14,7 +14,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA 
 from sklearn.manifold import TSNE
 
-from train_stats_constrained import encoder_gen, decoder_gen
+from train_fully_conv import encoder_gen, decoder_gen, kl_reconstruction_loss, ELBO_Test
 import numpy as np
 import gc 
 import tensorflow_probability as tfp 
@@ -352,18 +352,10 @@ def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min,
     # Predict latent train & test data
     test_mean, test_log_var, z_test = vae_encoder.predict(test_data)
     train_mean, train_log_var, z_train = vae_encoder.predict(train_data)
-    #np.save("PCA_Trials/Covariance_Test_Z_Samples.npy", z_test)
-    #np.save("PCA_Trials/Covariance_Test_Mean_Samples.npy", test_mean)
-    #np.save("PCA_Trials/Covariance_Test_Log_Var_Samples.npy", test_log_var)
+
     train_mean_var = np.concatenate((train_mean, train_log_var), axis=1)
     test_mean_var = np.concatenate((test_mean, test_log_var), axis=1)
-    np.save("PCA_Trials/83_PCA_Train.npy", train_mean_var)
-    np.save("PCA_Trials/83_PCA_Test.npy", test_mean_var)
-    print("Training data")
-    print(gdfgdfggd)
-    #print(dfsdsdgsdg)
-    #np.save("PCA_Trials/Covariance_Train_High_Dim_Latent_Space.npy", train_mean_var)
-    #np.save("PCA_Trials/Covariance_Test_High_Dim_Latent_Space.npy", test_mean_var)
+
     # Apply scaling and tsne 
     sc = StandardScaler()
     z_train_std = sc.fit_transform(train_mean_var)
@@ -376,7 +368,7 @@ def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min,
     pca.fit(z_train_std)
     z_test_pca = pca.transform(z_test_std)
 
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Synoptic_Latent_Spaces/2D_PCA_Diurnal_Interval_Composite_Anon_Ocean_Region_Latent_Space__{}".format(id), z_test_pca)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/model_graphs/latent_space/50_50_2D_PCA_Latent_Space__{}".format(id), z_test_pca)
     print("Made it to the save")
     if dataset_type == "half_deep_convection":
         colors = ["#FF4940", "#3D9AD1"]
@@ -394,7 +386,7 @@ def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min,
         plt.scatter(x=z_test_pca[:, 0], y=z_test_pca[:, 1], s=0.1)
         plt.colorbar()
 
-    plt.savefig('./model_graphs/latent_space/Enthalpy_Covariance_PCA_Mean_Var_latent_space_with_pca_{}.png'.format(id))    
+    #plt.savefig('./model_graphs/latent_space/Enthalpy_Covariance_PCA_Mean_Var_latent_space_with_pca_{}.png'.format(id))    
 
 
 def interpolate_points(p1, p2, n_steps=100):
@@ -438,13 +430,27 @@ def numpy_slerp(t, p0, p1):
         return np.sin((1.0-t)*omega) / so * p0 + np.sin(t*omega)/so * p1
 
 def latent_space_interpolation(vae, decoder, vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type):
-    sample_one = np.expand_dims(test_data[15880,:,:], axis=0)
-    sample_two = np.expand_dims(test_data[6548,:,:],axis=0)
-   
+    
+    starter_array = np.array([47,48,49,50])+96*4
+    starter = int(np.mean(starter_array)-(96*4))
+    ender_array = np.array([55,56,57,58])+96*4
+    ender = int(np.mean(ender_array)-(96*4))
+    
+    
+    sample_one = np.expand_dims(test_data[starter_array,:,:], axis=0)
+    sample_two = np.expand_dims(test_data[ender_array,:,:],axis=0)
+    sample_one = np.nanmean(sample_one, axis=1)
+    sample_two = np.nanmean(sample_two, axis=1)
+    
+    #starter = 54
+    #ender = 62
+    #sample_one = np.expand_dims(test_data[starter+96*4,:,:], axis=0)
+    #sample_two = np.expand_dims(test_data[ender+96*4,:,:],axis=0)
+    
     test_mean_one, test_log_var_one, z_test_one = vae_encoder.predict(sample_one)
     test_mean_two, test_log_var_two, z_test_two = vae_encoder.predict(sample_two)
     
-    count = 100
+    count = 15
     interpolated_images = np.empty(shape=(count,len(z_test_two[0])))
     interpolated_orig_images = np.empty(shape=(count,len(sample_one[0])*len(sample_one[0][0])))
     values = np.linspace(0, 1, num=count)
@@ -454,41 +460,17 @@ def latent_space_interpolation(vae, decoder, vae_encoder, train_data, test_data,
     
     reconstructed_Image_Series = decoder.predict(interpolated_images)
     reconstructed_Image_finals = reconstructed_Image_Series[:,:3840]
-
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/203_Original_Images_W_Comp_15880_6548.npy", interpolated_orig_images)
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/203_Latent_Images_W_Comp_15880_6548.npy", interpolated_images)
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/203_Reconstructed_Images_W_Comp_15880_6548.npy", reconstructed_Image_finals)
-     
-    print("Passed the saves")   
-    interpolated_images.shape
-    num_images = 10
-    np.random.seed(42)
-    plt.figure(figsize=(30, 8))
-
-    for i, image_idx in enumerate(interpolated_images):
     
-        ax = plt.subplot(5, num_images, i + 1)
-        plt.imshow(interpolated_images[i].reshape(64, 16).T)
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.set_title("Encoded: {}".format(i))
-    
-        ax = plt.subplot(5, num_images,num_images+ i + 1)
-        reconstructed_image = decoder.predict(np.expand_dims(interpolated_images[i,:],axis=0))
-        plt.imshow(np.squeeze(reconstructed_image)[:3840].reshape(128,30).T)
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.set_title("Latent: {}".format(i))
+    linear_images = interpolate_points(z_test_one.flatten(),z_test_two.flatten(),count)
+    linearreconstructed_Image_Series = decoder.predict(linear_images)
+    linearreconstructed_Image_finals = linearreconstructed_Image_Series[:,:3840]
+
+    #np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/31_Original_Images_W_Comp_63_64.npy", interpolated_orig_images)
+    #np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/31_Latent_Images_W_Comp_63_64.npy", interpolated_images)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/Amazon_Arc_Tracker/Averaged_30_min_hov_muller_31_Reconstructed_Images_W_Comp_"+str(starter)+"_"+str(ender)+".npy", reconstructed_Image_finals)
         
-        ax = plt.subplot(5, num_images,2*num_images+ i + 1)
-        plt.imshow(interpolated_orig_images[i].reshape(128,30).T)
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.set_title("Image: {}".format(i))
-        plt.savefig("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/model_graphs/latent_space_interp/amazon_diurnal_trial.png")
+    #np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/Amazon_Day_30_Minutes/linear_hov_muller_31_Reconstructed_Images_W_Comp_"+str(starter)+"_"+str(ender)+".npy", linearreconstructed_Image_finals)
+    print("Passed the saves")   
     
     
     
@@ -517,6 +499,37 @@ def sample_frob_norm(vae, decoder, vae_encoder, train_data, test_data, id, datas
     np.save("Saved_Data/Rough_Overall_FR_Norm__{}.npy".format(id), RM)
     print("completed")   
     
+    
+def sample_anon_detect(vae, decoder, vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type): 
+    """
+    Create a scatter plot of the latent space containing all test samples.
+    """
+
+    # Predict latent train & test data
+    test_mean, test_log_var, z_test = vae_encoder.predict(test_data)
+    #train_mean, train_log_var, z_train = vae_encoder.predict(train_data)
+    print("the shape of the test data is",test_data.shape)
+    print("the shape of test mean is",test_mean.shape)
+    print("the shape of test log var is",test_log_var.shape)
+    print("the shape of z test is",z_test.shape)
+    print("made it here")
+    sample_mean_var = decoder.predict(z_test) 
+    sample_mean = sample_mean_var[:, :128*30]
+    sample_log_var = sample_mean_var[:, 128*30:]
+    print("the shape of the decoder output is", sample_mean_var.shape)
+    print("the shape of the sample mean is", sample_mean.shape)
+    print("The shape of the sample log var is", sample_log_var.shape)
+    print("hello there")
+    losses = ELBO_Test(test_log_var, test_mean, vae)
+    truths = np.reshape(test_data, (len(test_data),30*128))
+    print("The reshaped test data is", truths.shape)
+    something = losses(truths,sample_mean_var)
+    sess = tf.InteractiveSession()
+    elbo = something.eval()
+    gc.collect()
+    print(elbo.shape)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/model_graphs/Anomalies/Trackable_ELBO_Data__{}.npy".format(id),elbo)
+    print("completed")
     
     
 def generate_samples(decoder, dataset_min, dataset_max, latent_dim: int, id):
@@ -615,10 +628,10 @@ def main():
     #reconstruct_targets(vae, test_data, [2, 15, 66 , 85, 94], args.id, dataset_max, dataset_min)
     #reconstruct_targets_paper(vae, test_data, [23506, 66 , 23746], args.id, dataset_max, dataset_min)
     #reconstruct_targets_paper(vae, test_data, [2, 15, 66 , 85, 94], args.id, dataset_max, dataset_min)
-    #sample_latent_space(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
-    #sample_latent_space_var(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
-    latent_space_interpolation(vae, vae_decoder, encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    sample_latent_space_var(encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #latent_space_interpolation(vae, vae_decoder, encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
     #sample_frob_norm(vae, vae_decoder, encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
+    #sample_anon_detect(vae, vae_decoder, encoder_result.vae_encoder, train_data, test_data, args.id, dataset_min, dataset_max, test_labels, args.dataset_type)
     #generate_samples(vae_decoder, dataset_min, dataset_max, model_config["encoder"]["latent_dim"], args.id)
 
 def argument_parsing():

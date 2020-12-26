@@ -14,11 +14,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA 
 from sklearn.manifold import TSNE
 
-from train_stats_constrained import encoder_gen, decoder_gen
+from scalar_train_small_fully_connected import encoder_gen, decoder_gen
 import numpy as np
 import gc 
 import tensorflow_probability as tfp 
-from scipy import spatial
 
 def f_norm(true, pred):
     covariance_truth = tfp.stats.covariance(true)
@@ -46,8 +45,8 @@ def reconstruct_targets_paper(vae, test_data, targets, id, dataset_max, dataset_
 
         sample = test_data[target]
         sample_mean_var = vae.predict(np.expand_dims(sample, 0))
-        sample_mean = sample_mean_var[0, :128*30]
-        sample_log_var = sample_mean_var[0, 128*30:]
+        sample_mean = sample_mean_var[0, :128]
+        sample_log_var = sample_mean_var[0, 128:]
 
         # Sample reconstruction based on predicted mean and variance
         recon_mean = sample_mean
@@ -65,19 +64,19 @@ def reconstruct_targets_paper(vae, test_data, targets, id, dataset_max, dataset_
         max_reconstructed = np.max(recon_mean)
         max_recon_var = np.max(recon_var)
         print("max of reconstructed", max_reconstructed)
-        max_sample = np.max(sample.reshape((128*30,)))
+        max_sample = np.max(sample.reshape((128,)))
         print("max of original", max_sample)
         min_reconstructed = np.min(recon_mean)
         min_recon_var = np.min(recon_var)
         print("min of reconstructed", min_reconstructed)
-        min_sample = np.min(sample.reshape((128*30,)))
+        min_sample = np.min(sample.reshape((128,)))
         print("min of original", min_sample)
 
         # Reshape reconstructed sample 
-        recon_mean = recon_mean.reshape((30, 128))
-        recon_var = recon_var.reshape((30, 128))
+        recon_mean = recon_mean.reshape((128))
+        recon_var = recon_var.reshape((128))
 
-        original_samples.append(sample[:, :, 0])
+        original_samples.append(sample[:, 0])
         recon_means.append(recon_mean)
         recon_vars.append(recon_var)
 
@@ -99,16 +98,14 @@ def reconstruct_targets_paper(vae, test_data, targets, id, dataset_max, dataset_
     np.save("CI_Figure_Data/Reconstruct_Means.npy", recon_means)
     for i in range(len(targets)): 
         y_ticks = np.arange(1400, 0, -400)
-        #print("y ticks", y_ticks)
 
-        sub_img = axs[i, 0].imshow(original_samples[i], cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        sub_img = axs[i, 0].plot(original_samples[i], c='green')
         axs[i, 0].invert_yaxis()
-        axs[i, 0].set_yticklabels(y_ticks)
 
         if i == 2:
             axs[i, 0].set_ylabel("Pressure (hpa)", fontsize=12, labelpad=10)
             
-        sub_img = axs[i, 1].imshow(recon_means[i], cmap='RdBu_r', vmin=vmin, vmax=vmax)
+        sub_img = axs[i, 1].plot(recon_means[i], c='green')
         axs[i, 1].invert_yaxis()
 
         if i == 0:
@@ -118,7 +115,7 @@ def reconstruct_targets_paper(vae, test_data, targets, id, dataset_max, dataset_
         if i == len(targets) - 1:
             axs[i, 0].set_xlabel('CRMs', fontsize=12, labelpad=5)
             axs[i, 1].set_xlabel('CRMs', fontsize=12, labelpad=5)
-            fig.colorbar(sub_img, ax=axs[:, 1], label="Vertical Velocity", shrink=0.6)
+            #fig.colorbar(sub_img, ax=axs[:, 1], label="Precipitation Rate", shrink=0.6)
         #axs[i,1].set_yticks([])
         #if  i < len(targets) - 2:
             #axs[i, 0].set_xticks([])
@@ -357,10 +354,8 @@ def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min,
     #np.save("PCA_Trials/Covariance_Test_Log_Var_Samples.npy", test_log_var)
     train_mean_var = np.concatenate((train_mean, train_log_var), axis=1)
     test_mean_var = np.concatenate((test_mean, test_log_var), axis=1)
-    np.save("PCA_Trials/83_PCA_Train.npy", train_mean_var)
-    np.save("PCA_Trials/83_PCA_Test.npy", test_mean_var)
     print("Training data")
-    print(gdfgdfggd)
+    print(train_mean_var.shape)
     #print(dfsdsdgsdg)
     #np.save("PCA_Trials/Covariance_Train_High_Dim_Latent_Space.npy", train_mean_var)
     #np.save("PCA_Trials/Covariance_Test_High_Dim_Latent_Space.npy", test_mean_var)
@@ -376,7 +371,7 @@ def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min,
     pca.fit(z_train_std)
     z_test_pca = pca.transform(z_test_std)
 
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Synoptic_Latent_Spaces/2D_PCA_Diurnal_Interval_Composite_Anon_Ocean_Region_Latent_Space__{}".format(id), z_test_pca)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Synoptic_Latent_Spaces/2D_PCA_Latent_Space__{}".format(id), z_test_pca)
     print("Made it to the save")
     if dataset_type == "half_deep_convection":
         colors = ["#FF4940", "#3D9AD1"]
@@ -394,52 +389,17 @@ def sample_latent_space_var(vae_encoder, train_data, test_data, id, dataset_min,
         plt.scatter(x=z_test_pca[:, 0], y=z_test_pca[:, 1], s=0.1)
         plt.colorbar()
 
-    plt.savefig('./model_graphs/latent_space/Enthalpy_Covariance_PCA_Mean_Var_latent_space_with_pca_{}.png'.format(id))    
-
-
-def interpolate_points(p1, p2, n_steps=100):
-    "linear interpolation -- https://openreview.net/pdf?id=S1fQSiCcYm"
-    ratios = np.linspace(0, 1, num=n_steps)
-    vectors = list()
-    for ratio in ratios:
-        v = (1.0 - ratio) * p1 + ratio * p2
-        vectors.append(v)
-    return np.asarray(vectors)
-
-def slerp(count, low, high):
-    """Spherical interpolation. val has a range of 0 to 1."""
-    values = np.linspace(0, 1, num=count)
-    output_array = np.empty(shape=(count,low.size))
-    for i in range(len(values)):
-        val = values[i]
-        omega = np.arccos(np.dot(low/np.linalg.norm(low), high/np.linalg.norm(high)))
-        so = np.sin(omega)
-        output_array[i,:] = np.sin((1.0-val)*omega) / so * low + np.sin(val*omega)/so * high
-    return output_array
-
-#https://arxiv.org/pdf/1803.05428.pdf
-#https://www.inference.vc/high-dimensional-gaussian-distributions-are-soap-bubble/
-def original_slerp(val, low, high):
-    """Spherical interpolation. val has a range of 0 to 1.  https://github.com/dribnet/plat/blob/master/plat/interpolate.py"""
-    if val <= 0:
-        return low
-    elif val >= 1:
-        return high
-    elif np.allclose(low, high):
-        return low
-    omega = np.arccos(np.dot(low/np.linalg.norm(low), high/np.linalg.norm(high)))
-    so = np.sin(omega)
-    return np.sin((1.0-val)*omega) / so * low + np.sin(val*omega)/so * high
+    plt.savefig('./model_graphs/latent_space/PCA_latent_space_with_{}.png'.format(id))    
 
 
 def numpy_slerp(t, p0, p1):
-        omega = np.arccos(np.dot(p0/np.linalg.norm(p0), p1/np.linalg.norm(p1)))
-        so = np.sin(omega)
-        return np.sin((1.0-t)*omega) / so * p0 + np.sin(t*omega)/so * p1
-
+    omega = np.arccos(np.dot(p0/np.linalg.norm(p0), p1/np.linalg.norm(p1)))
+    so = np.sin(omega)
+    return np.sin((1.0-t)*omega) / so * p0 + np.sin(t*omega)/so * p1
+    
 def latent_space_interpolation(vae, decoder, vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type):
-    sample_one = np.expand_dims(test_data[15880,:,:], axis=0)
-    sample_two = np.expand_dims(test_data[6548,:,:],axis=0)
+    sample_one = np.expand_dims(test_data[135927,:,:], axis=0)
+    sample_two = np.expand_dims(test_data[112938,:,:],axis=0)
    
     test_mean_one, test_log_var_one, z_test_one = vae_encoder.predict(sample_one)
     test_mean_two, test_log_var_two, z_test_two = vae_encoder.predict(sample_two)
@@ -453,45 +413,13 @@ def latent_space_interpolation(vae, decoder, vae_encoder, train_data, test_data,
         interpolated_orig_images[i,:]= numpy_slerp(values[i], sample_one.flatten(),sample_two.flatten())
     
     reconstructed_Image_Series = decoder.predict(interpolated_images)
-    reconstructed_Image_finals = reconstructed_Image_Series[:,:3840]
+    reconstructed_Image_finals = reconstructed_Image_Series[:,:128]
 
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/203_Original_Images_W_Comp_15880_6548.npy", interpolated_orig_images)
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/203_Latent_Images_W_Comp_15880_6548.npy", interpolated_images)
-    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/203_Reconstructed_Images_W_Comp_15880_6548.npy", reconstructed_Image_finals)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/167_Original_Images_W_Comp_135927_112938.npy", interpolated_orig_images)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/167_Latent_Images_W_Comp_135927_112938.npy", interpolated_images)
+    np.save("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/Interpolation_Data/167_Reconstructed_Images_W_Comp_135927_112938.npy", reconstructed_Image_finals)
      
-    print("Passed the saves")   
-    interpolated_images.shape
-    num_images = 10
-    np.random.seed(42)
-    plt.figure(figsize=(30, 8))
-
-    for i, image_idx in enumerate(interpolated_images):
-    
-        ax = plt.subplot(5, num_images, i + 1)
-        plt.imshow(interpolated_images[i].reshape(64, 16).T)
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.set_title("Encoded: {}".format(i))
-    
-        ax = plt.subplot(5, num_images,num_images+ i + 1)
-        reconstructed_image = decoder.predict(np.expand_dims(interpolated_images[i,:],axis=0))
-        plt.imshow(np.squeeze(reconstructed_image)[:3840].reshape(128,30).T)
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.set_title("Latent: {}".format(i))
-        
-        ax = plt.subplot(5, num_images,2*num_images+ i + 1)
-        plt.imshow(interpolated_orig_images[i].reshape(128,30).T)
-        plt.gray()
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
-        ax.set_title("Image: {}".format(i))
-        plt.savefig("/fast/gmooers/gmooers_git/CBRAIN-CAM/MAPS/model_graphs/latent_space_interp/amazon_diurnal_trial.png")
-    
-    
-    
+    print("Passed the saves") 
     
     
 def sample_frob_norm(vae, decoder, vae_encoder, train_data, test_data, id, dataset_min, dataset_max, test_labels, dataset_type): 
@@ -589,16 +517,15 @@ def main():
     print("dataset min", dataset_min)
 
     img_width = train_data.shape[1]
-    img_height = train_data.shape[2]
 
-    print("Image shape:", img_width, img_height)
+    print("Image shape:", img_width)
     
     # Construct VAE Encoder 
-    encoder_result = encoder_gen((img_width, img_height), model_config["encoder"], args.id)
+    encoder_result, shape_flatten  = encoder_gen((img_width), model_config["encoder"], args.id)
     # Construct VAE Decoder 
     vae_decoder = decoder_gen(
-        (img_width, img_height),  
-        model_config["decoder"]
+        (img_width),  
+        model_config["decoder"], shape_flatten 
     )
     _, _, z = encoder_result.vae_encoder(encoder_result.inputs)
     x_mu_var = vae_decoder(z)
